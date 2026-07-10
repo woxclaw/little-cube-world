@@ -3,6 +3,10 @@
   "name": "little-cube-world-api",
   "main": "index.js",
   "compatibility_date": "2026-07-10",
+  "assets": {
+    "directory": "../public",
+    "binding": "ASSETS"
+  },
   "durable_objects": {
     "bindings": [
       { "name": "WORLD", "class_name": "World" }

@@ -4,7 +4,7 @@ A persistent, real-time shared JavaScript world. Each WebSocket connection recei
 
 ## Deployments
 
-- Front end: Cloudflare Pages
+- Front end: Cloudflare Worker static assets, with a Cloudflare Pages mirror
 - API and persistent state: Cloudflare Worker plus Durable Object SQLite
 
 ## Local use

@@ -118,7 +118,7 @@ export class World {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname !== "/ws") return new Response("Little Cube World API", { status: 200 });
-    return env.WORLD.getByName("public-world").fetch(request);
+    if (url.pathname === "/ws") return env.WORLD.getByName("public-world").fetch(request);
+    return env.ASSETS.fetch(request);
   }
 };
