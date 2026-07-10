@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#16242b" />
+    <title>Little Cube World</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header>
+        <div><p class="eyebrow">A shared little place</p><h1>Little Cube World</h1></div>
+        <div id="connection" class="connection">Connecting</div>
+      </header>
+      <section class="world-wrap" aria-label="Shared world">
+        <canvas id="world" aria-label="Little Cube World canvas"></canvas>
+        <div class="world-hint">Move: WASD or arrow keys. Drop cubes: click the ground.</div>
+      </section>
+      <aside class="control-panel">
+        <section class="self"><p class="eyebrow">You are here</p><strong id="me">Assigning an ID</strong><p id="position">Position: --</p></section>
+        <section><p class="eyebrow">Cube color</p><div id="palette" class="palette" aria-label="Cube color"></div></section>
+        <section><p class="eyebrow">People nearby</p><div id="people" class="people"><p class="empty">Waiting for others to arrive.</p></div></section>
+      </aside>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
