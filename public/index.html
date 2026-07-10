@@ -3,33 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#16242b" />
-    <title>Little Cube World</title>
+    <meta name="theme-color" content="#24342b" />
+    <title>Doggy Evolution World</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main class="app-shell">
       <header>
-        <div><p class="eyebrow">A shared little place</p><h1>Little Cube World</h1></div>
+        <div><p class="eyebrow">A multiplayer tail-wagging adventure</p><h1>Doggy Evolution World</h1></div>
         <div id="connection" class="connection">Connecting</div>
       </header>
-      <section class="world-wrap" aria-label="Shared world">
-        <canvas id="world" aria-label="Little Cube World canvas"></canvas>
-        <div class="world-hint">Move with WASD, arrow keys, or the on-screen pad. Drop cubes on the ground or at your feet.</div>
+      <section class="world-wrap" aria-label="Doggy Evolution World">
+        <canvas id="world" aria-label="3D dog world"></canvas>
+        <div class="world-hint">Eat bone cookies to grow! Move with WASD, arrow keys, or the pad.</div>
+        <div id="toast" class="toast" aria-live="polite"></div>
         <div class="touch-controls" aria-label="Touch game controls">
-          <div class="d-pad" aria-label="Move your avatar">
+          <div class="d-pad" aria-label="Move your dog">
             <button type="button" class="move-button move-up" data-direction="up" aria-label="Move up">▲</button>
             <button type="button" class="move-button move-left" data-direction="left" aria-label="Move left">◀</button>
             <button type="button" class="move-button move-right" data-direction="right" aria-label="Move right">▶</button>
             <button type="button" class="move-button move-down" data-direction="down" aria-label="Move down">▼</button>
           </div>
-          <button type="button" id="drop-cube" class="drop-cube">Drop cube</button>
         </div>
       </section>
       <aside class="control-panel">
-        <section class="self"><p class="eyebrow">You are here</p><strong id="me">Assigning an ID</strong><p id="position">Position: --</p></section>
-        <section><p class="eyebrow">Cube color</p><div id="palette" class="palette" aria-label="Cube color"></div></section>
-        <section><p class="eyebrow">People nearby</p><div id="people" class="people"><p class="empty">Waiting for others to arrive.</p></div></section>
+        <section class="self"><p class="eyebrow">Your pup</p><strong id="me">Finding your collar…</strong><p id="breed">Breed: —</p><div class="xp-bar" aria-label="Evolution progress"><i id="xp-fill"></i></div><p id="progress">0 / 5 bone cookies</p></section>
+        <section><p class="eyebrow">Evolution trail</p><ol id="breed-list" class="breed-list"></ol></section>
+        <section><p class="eyebrow">Dogs in the park</p><div id="people" class="people"><p class="empty">Waiting for other pups.</p></div></section>
       </aside>
     </main>
     <script type="module" src="app.js"></script>

@@ -1,7 +1,9 @@
-const MAX_CUBES = 1000;
-// The browser renders a 100 × 100 terrain from -50 through +50 on each axis.
-// Keep persisted world coordinates within that playable area.
 const LIMIT = 49;
+const COOKIE_COUNT = 70;
+const BASE_XP = 5;
+const BREEDS = ["Chihuahua", "Shitzu", "Golden Retriever", "Border Collie", "Rottweiler", "Saint Bernard"];
+const REQUIREMENTS = [1, 2, 4, 8, 16].map((multiplier) => BASE_XP * multiplier);
+const COLORS = ["#f09c74", "#e5bd66", "#7b513c", "#3c2b27", "#f1f0e8"];
 
 function validNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
@@ -11,20 +13,29 @@ function clamp(value) {
   return Math.max(-LIMIT, Math.min(LIMIT, value));
 }
 
+function randomPoint() {
+  return {
+    x: Math.round((Math.random() * LIMIT * 2 - LIMIT) * 10) / 10,
+    y: Math.round((Math.random() * LIMIT * 2 - LIMIT) * 10) / 10
+  };
+}
+
 export class World {
   constructor(ctx) {
     this.ctx = ctx;
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS cubes (
+        CREATE TABLE IF NOT EXISTS cookies (
           id TEXT PRIMARY KEY,
           x REAL NOT NULL,
-          y REAL NOT NULL,
-          color TEXT NOT NULL,
-          created_at INTEGER NOT NULL
+          y REAL NOT NULL
         )
       `);
-      ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS cubes_created ON cubes(created_at)");
+      const existing = ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM cookies").one().count;
+      for (let index = existing; index < COOKIE_COUNT; index += 1) {
+        const point = randomPoint();
+        ctx.storage.sql.exec("INSERT INTO cookies (id, x, y) VALUES (?, ?, ?)", crypto.randomUUID(), point.x, point.y);
+      }
     });
   }
 
@@ -36,20 +47,22 @@ export class World {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     const id = crypto.randomUUID();
-    const avatar = {
+    const point = randomPoint();
+    const dog = {
       id,
-      label: `Visitor ${id.slice(0, 4)}`,
-      x: Math.round((Math.random() * 8 - 4) * 10) / 10,
-      y: Math.round((Math.random() * 8 - 4) * 10) / 10,
-      color: ["#ff5d73", "#25c4a4", "#ffb21e", "#6e8cff", "#d466ed"][Math.floor(Math.random() * 5)]
+      label: `Pup ${id.slice(0, 4)}`,
+      x: point.x,
+      y: point.y,
+      color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      breed: 0,
+      xp: 0
     };
 
-    server.serializeAttachment(avatar);
+    server.serializeAttachment(dog);
     this.ctx.acceptWebSocket(server);
-
-    const cubes = this.ctx.storage.sql.exec("SELECT id, x, y, color FROM cubes ORDER BY created_at ASC").toArray();
-    this.send(server, { type: "welcome", avatar, people: this.people(), cubes });
-    this.broadcast({ type: "avatar_join", avatar }, server);
+    const cookies = this.ctx.storage.sql.exec("SELECT id, x, y FROM cookies").toArray();
+    this.send(server, { type: "welcome", dog, people: this.people(), cookies, baseXp: BASE_XP, breeds: BREEDS, requirements: REQUIREMENTS });
+    this.broadcast({ type: "dog_join", dog }, server);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -60,50 +73,45 @@ export class World {
     } catch {
       return;
     }
-    const avatar = socket.deserializeAttachment();
-    if (!avatar) return;
+    const dog = socket.deserializeAttachment();
+    if (!dog) return;
 
     if (message.type === "move" && validNumber(message.x) && validNumber(message.y)) {
-      const updated = { ...avatar, x: clamp(message.x), y: clamp(message.y) };
+      const updated = { ...dog, x: clamp(message.x), y: clamp(message.y) };
       socket.serializeAttachment(updated);
-      this.broadcast({ type: "avatar_update", avatar: updated });
+      this.broadcast({ type: "dog_update", dog: updated });
       return;
     }
 
-    if (message.type === "drop" && validNumber(message.x) && validNumber(message.y)) {
-      const color = typeof message.color === "string" && /^#[0-9a-f]{6}$/i.test(message.color) ? message.color : "#ffb21e";
-      const cube = { id: crypto.randomUUID(), x: clamp(message.x), y: clamp(message.y), color };
-      this.ctx.storage.sql.exec(
-        "INSERT INTO cubes (id, x, y, color, created_at) VALUES (?, ?, ?, ?, ?)",
-        cube.id, cube.x, cube.y, cube.color, Date.now()
-      );
-      this.ctx.storage.sql.exec(
-        "DELETE FROM cubes WHERE id IN (SELECT id FROM cubes ORDER BY created_at ASC LIMIT MAX(0, (SELECT COUNT(*) FROM cubes) - ?))",
-        MAX_CUBES
-      );
-      this.broadcast({ type: "cube_add", cube });
-      return;
-    }
+    if (message.type === "eat" && typeof message.cookieId === "string") {
+      const cookie = this.ctx.storage.sql.exec("SELECT id, x, y FROM cookies WHERE id = ?", message.cookieId).one();
+      if (!cookie || Math.hypot(cookie.x - dog.x, cookie.y - dog.y) > 1.75) return;
 
-    if (message.type === "teleport" && typeof message.targetId === "string") {
-      const target = this.people().find((person) => person.id === message.targetId);
-      if (!target || target.id === avatar.id) return;
-      const updated = { ...avatar, x: clamp(target.x + 1.3), y: clamp(target.y) };
+      const point = randomPoint();
+      this.ctx.storage.sql.exec("UPDATE cookies SET x = ?, y = ? WHERE id = ?", point.x, point.y, cookie.id);
+      let xp = dog.xp + 1;
+      let breed = dog.breed;
+      let evolved = false;
+      while (breed < REQUIREMENTS.length && xp >= REQUIREMENTS[breed]) {
+        xp -= REQUIREMENTS[breed];
+        breed += 1;
+        evolved = true;
+      }
+      const updated = { ...dog, xp, breed };
       socket.serializeAttachment(updated);
-      this.broadcast({ type: "avatar_update", avatar: updated });
+      this.broadcast({ type: "cookie_respawn", cookie: { id: cookie.id, ...point } });
+      this.broadcast({ type: "dog_update", dog: updated, ate: true, evolved });
     }
   }
 
   webSocketClose(socket) {
-    const avatar = socket.deserializeAttachment();
-    if (avatar) this.broadcast({ type: "avatar_leave", id: avatar.id }, socket);
+    const dog = socket.deserializeAttachment();
+    if (dog) this.broadcast({ type: "dog_leave", id: dog.id }, socket);
     socket.close(1000, "Connection closed");
   }
 
   people() {
-    return this.ctx.getWebSockets()
-      .map((socket) => socket.deserializeAttachment())
-      .filter(Boolean);
+    return this.ctx.getWebSockets().map((socket) => socket.deserializeAttachment()).filter(Boolean);
   }
 
   send(socket, message) {
