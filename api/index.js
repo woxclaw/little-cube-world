@@ -101,7 +101,8 @@ export class World {
       y: point.y,
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
       breed: 0,
-      xp: 0
+      xp: 0,
+      heading: 0
     };
 
     server.serializeAttachment(dog);
@@ -127,7 +128,11 @@ export class World {
     if (!dog) return;
 
     if (message.type === "move" && validNumber(message.x) && validNumber(message.y)) {
-      const updated = { ...dog, x: clamp(message.x), y: clamp(message.y) };
+      const x = clamp(message.x);
+      const y = clamp(message.y);
+      const moved = x !== dog.x || y !== dog.y;
+      const heading = moved ? Math.atan2(y - dog.y, x - dog.x) : dog.heading;
+      const updated = { ...dog, x, y, heading };
       socket.serializeAttachment(updated);
       this.broadcast({ type: "dog_update", dog: updated });
       return;
@@ -207,6 +212,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/ws") return env.WORLD.getByName("public-world").fetch(request);
-    return env.ASSETS.fetch(request);
+    const response = await env.ASSETS.fetch(request);
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", "no-store, max-age=0");
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
   }
 };
