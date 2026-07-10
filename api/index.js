@@ -1,5 +1,7 @@
 const MAX_CUBES = 1000;
-const LIMIT = 42;
+// The browser renders a 100 × 100 terrain from -50 through +50 on each axis.
+// Keep persisted world coordinates within that playable area.
+const LIMIT = 49;
 
 function validNumber(value) {
   return typeof value === "number" && Number.isFinite(value);

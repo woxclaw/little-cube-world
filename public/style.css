@@ -8,7 +8,7 @@ h1 { margin: 2px 0 0; font-size: 26px; font-weight: 750; letter-spacing: 0; }
 .connection { color: #99b0b5; font-size: 13px; }
 .connection.live { color: #6ee0bb; }
 .world-wrap { min-height: 580px; position: relative; border: 1px solid #385057; border-radius: 6px; overflow: hidden; background: #16242b; }
-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 .world-hint { position: absolute; bottom: 12px; left: 12px; color: #a7bcbd; background: rgba(12, 25, 29, .78); padding: 7px 9px; border-radius: 4px; font-size: 12px; pointer-events: none; }
 .touch-controls { display: none; position: absolute; inset: auto 14px 14px; align-items: end; justify-content: space-between; pointer-events: none; }
 .d-pad { display: grid; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 46px); gap: 3px; }
