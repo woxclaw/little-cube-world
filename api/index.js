@@ -1,8 +1,12 @@
 const LIMIT = 49;
 const COOKIE_COUNT = 70;
-const BASE_XP = 5;
-const BREEDS = ["Chihuahua", "Shitzu", "Golden Retriever", "Border Collie", "Rottweiler", "Saint Bernard"];
-const REQUIREMENTS = [1, 2, 4, 8, 16].map((multiplier) => BASE_XP * multiplier);
+const TOY_COUNT = Math.ceil(COOKIE_COUNT / 8);
+const NPCS_PER_BREED = 2;
+const BONE_XP = 1;
+const TOY_XP = 2;
+const BREEDS = ["Chihuahua", "Shih Tzu", "Golden Retriever", "Border Collie", "Rottweiler", "Saint Bernard"];
+const NPC_BREEDS = ["Chow Chow", "Beagle", "Husky"];
+const REQUIREMENTS = [5, 10, 20, 40, 80];
 const COLORS = ["#f09c74", "#e5bd66", "#7b513c", "#3c2b27", "#f1f0e8"];
 
 function validNumber(value) {
@@ -20,6 +24,19 @@ function randomPoint() {
   };
 }
 
+function makeNpc(breed, number) {
+  const point = randomPoint();
+  return {
+    id: crypto.randomUUID(),
+    label: `${breed} friend ${number + 1}`,
+    breed,
+    x: point.x,
+    y: point.y,
+    heading: Math.random() * Math.PI * 2,
+    color: breed === "Chow Chow" ? "#bb794b" : breed === "Beagle" ? "#c6773d" : "#dbe8f0"
+  };
+}
+
 export class World {
   constructor(ctx) {
     this.ctx = ctx;
@@ -31,10 +48,39 @@ export class World {
           y REAL NOT NULL
         )
       `);
+      ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS toys (
+          id TEXT PRIMARY KEY,
+          x REAL NOT NULL,
+          y REAL NOT NULL
+        )
+      `);
+      ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS npcs (
+          id TEXT PRIMARY KEY,
+          label TEXT NOT NULL,
+          breed TEXT NOT NULL,
+          x REAL NOT NULL,
+          y REAL NOT NULL,
+          heading REAL NOT NULL,
+          color TEXT NOT NULL
+        )
+      `);
       const existing = ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM cookies").one().count;
       for (let index = existing; index < COOKIE_COUNT; index += 1) {
         const point = randomPoint();
         ctx.storage.sql.exec("INSERT INTO cookies (id, x, y) VALUES (?, ?, ?)", crypto.randomUUID(), point.x, point.y);
+      }
+      const toys = ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM toys").one().count;
+      for (let index = toys; index < TOY_COUNT; index += 1) {
+        const point = randomPoint();
+        ctx.storage.sql.exec("INSERT INTO toys (id, x, y) VALUES (?, ?, ?)", crypto.randomUUID(), point.x, point.y);
+      }
+      const npcCount = ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM npcs").one().count;
+      for (let index = npcCount; index < NPC_BREEDS.length * NPCS_PER_BREED; index += 1) {
+        const breed = NPC_BREEDS[index % NPC_BREEDS.length];
+        const npc = makeNpc(breed, Math.floor(index / NPC_BREEDS.length));
+        ctx.storage.sql.exec("INSERT INTO npcs (id, label, breed, x, y, heading, color) VALUES (?, ?, ?, ?, ?, ?, ?)", npc.id, npc.label, npc.breed, npc.x, npc.y, npc.heading, npc.color);
       }
     });
   }
@@ -61,8 +107,12 @@ export class World {
     server.serializeAttachment(dog);
     this.ctx.acceptWebSocket(server);
     const cookies = this.ctx.storage.sql.exec("SELECT id, x, y FROM cookies").toArray();
-    this.send(server, { type: "welcome", dog, people: this.people(), cookies, baseXp: BASE_XP, breeds: BREEDS, requirements: REQUIREMENTS });
+    const toys = this.ctx.storage.sql.exec("SELECT id, x, y FROM toys").toArray();
+    const npcs = this.npcs();
+    await this.ctx.storage.setAlarm(Date.now() + 1200);
+    this.send(server, { type: "welcome", dog, people: this.people(), cookies, toys, npcs, boneXp: BONE_XP, toyXp: TOY_XP, breeds: BREEDS, requirements: REQUIREMENTS, leaderboard: this.leaderboard() });
     this.broadcast({ type: "dog_join", dog }, server);
+    this.broadcast({ type: "leaderboard", leaderboard: this.leaderboard() });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -83,13 +133,15 @@ export class World {
       return;
     }
 
-    if (message.type === "eat" && typeof message.cookieId === "string") {
-      const cookie = this.ctx.storage.sql.exec("SELECT id, x, y FROM cookies WHERE id = ?", message.cookieId).one();
-      if (!cookie || Math.hypot(cookie.x - dog.x, cookie.y - dog.y) > 1.75) return;
+    if (message.type === "eat" && typeof message.itemId === "string" && (message.itemType === "cookie" || message.itemType === "toy")) {
+      const table = message.itemType === "toy" ? "toys" : "cookies";
+      const item = this.ctx.storage.sql.exec(`SELECT id, x, y FROM ${table} WHERE id = ?`, message.itemId).one();
+      if (!item || Math.hypot(item.x - dog.x, item.y - dog.y) > 1.75) return;
 
       const point = randomPoint();
-      this.ctx.storage.sql.exec("UPDATE cookies SET x = ?, y = ? WHERE id = ?", point.x, point.y, cookie.id);
-      let xp = dog.xp + 1;
+      this.ctx.storage.sql.exec(`UPDATE ${table} SET x = ?, y = ? WHERE id = ?`, point.x, point.y, item.id);
+      const earnedXp = message.itemType === "toy" ? TOY_XP : BONE_XP;
+      let xp = dog.xp + earnedXp;
       let breed = dog.breed;
       let evolved = false;
       while (breed < REQUIREMENTS.length && xp >= REQUIREMENTS[breed]) {
@@ -99,19 +151,45 @@ export class World {
       }
       const updated = { ...dog, xp, breed };
       socket.serializeAttachment(updated);
-      this.broadcast({ type: "cookie_respawn", cookie: { id: cookie.id, ...point } });
-      this.broadcast({ type: "dog_update", dog: updated, ate: true, evolved });
+      this.broadcast({ type: "item_respawn", itemType: message.itemType, item: { id: item.id, ...point } });
+      this.broadcast({ type: "dog_update", dog: updated, ate: true, itemType: message.itemType, earnedXp, evolved });
+      this.broadcast({ type: "leaderboard", leaderboard: this.leaderboard() });
     }
   }
 
   webSocketClose(socket) {
     const dog = socket.deserializeAttachment();
     if (dog) this.broadcast({ type: "dog_leave", id: dog.id }, socket);
+    this.broadcast({ type: "leaderboard", leaderboard: this.leaderboard() });
     socket.close(1000, "Connection closed");
+  }
+
+  async alarm() {
+    if (!this.ctx.getWebSockets().length) return;
+    const npcs = this.npcs().map((npc) => {
+      const heading = npc.heading + (Math.random() - .5) * .9;
+      const x = clamp(npc.x + Math.cos(heading) * (.35 + Math.random() * .25));
+      const y = clamp(npc.y + Math.sin(heading) * (.35 + Math.random() * .25));
+      const updated = { ...npc, x, y, heading };
+      this.ctx.storage.sql.exec("UPDATE npcs SET x = ?, y = ?, heading = ? WHERE id = ?", x, y, heading, npc.id);
+      return updated;
+    });
+    this.broadcast({ type: "npc_update", npcs });
+    await this.ctx.storage.setAlarm(Date.now() + 1200);
   }
 
   people() {
     return this.ctx.getWebSockets().map((socket) => socket.deserializeAttachment()).filter(Boolean);
+  }
+
+  npcs() {
+    return this.ctx.storage.sql.exec("SELECT id, label, breed, x, y, heading, color FROM npcs").toArray();
+  }
+
+  leaderboard() {
+    return this.people()
+      .sort((a, b) => b.breed - a.breed || b.xp - a.xp || a.label.localeCompare(b.label))
+      .map((dog, index) => ({ rank: index + 1, id: dog.id, label: dog.label, breed: dog.breed, xp: dog.xp, color: dog.color }));
   }
 
   send(socket, message) {

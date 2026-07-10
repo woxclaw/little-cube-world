@@ -15,7 +15,7 @@
       </header>
       <section class="world-wrap" aria-label="Doggy Evolution World">
         <canvas id="world" aria-label="3D dog world"></canvas>
-        <div class="world-hint">Eat bone cookies to grow! Move with WASD, arrow keys, or the pad. Swipe to orbit; pinch to zoom.</div>
+        <div class="world-hint">Bone cookies give 1 XP • rare toys give 2 XP! Move with WASD, arrow keys, or the pad.</div>
         <div id="toast" class="toast" aria-live="polite"></div>
         <div class="touch-controls" aria-label="Touch game controls">
           <div class="d-pad" aria-label="Move your dog">
@@ -29,6 +29,7 @@
       <aside class="control-panel">
         <section class="self"><p class="eyebrow">Your pup</p><strong id="me">Finding your collar…</strong><p id="breed">Breed: —</p><div class="xp-bar" aria-label="Evolution progress"><i id="xp-fill"></i></div><p id="progress">0 / 5 bone cookies</p></section>
         <section><p class="eyebrow">Evolution trail</p><ol id="breed-list" class="breed-list"></ol></section>
+        <section><p class="eyebrow">Park leaderboard</p><div id="leaderboard" class="leaderboard"><p class="empty">Finding the fastest tails…</p></div></section>
         <section><p class="eyebrow">Dogs in the park</p><div id="people" class="people"><p class="empty">Waiting for other pups.</p></div></section>
       </aside>
     </main>
