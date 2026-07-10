@@ -41,6 +41,15 @@ scene.fog = new THREE.Fog("#8ed1ef", 35, 108);
 const camera = new THREE.PerspectiveCamera(52, 1, .1, 250);
 camera.position.set(14, 16, 18);
 const cameraTarget = new THREE.Vector3();
+const CAMERA_DEFAULTS = {
+  azimuth: Math.atan2(14, 18),
+  elevation: Math.atan2(15, Math.hypot(14, 18)),
+  radius: Math.hypot(14, 15, 18),
+};
+const cameraOrbit = { ...CAMERA_DEFAULTS };
+const touchPointers = new Map();
+let pinchDistance = 0;
+let cameraGestureUntil = 0;
 const clock = new THREE.Clock();
 scene.add(new THREE.HemisphereLight("#e9faff", "#3e5938", 2.4));
 const sun = new THREE.DirectionalLight("#fff2c4", 2.7);
@@ -132,6 +141,70 @@ function setHeldDirection(direction, active) { if (active) heldDirections.add(di
 document.querySelectorAll(".move-button").forEach((button) => { const direction = button.dataset.direction; button.addEventListener("pointerdown", (event) => { event.preventDefault(); setHeldDirection(direction, true); }); ["pointerup", "pointercancel", "pointerleave"].forEach((name) => button.addEventListener(name, () => setHeldDirection(direction, false))); });
 const keyDirections = { ArrowUp:"up", ArrowDown:"down", ArrowLeft:"left", ArrowRight:"right", w:"up", a:"left", s:"down", d:"right" };
 window.addEventListener("keydown", (event) => { const direction = keyDirections[event.key] || keyDirections[event.key.toLowerCase()]; if (direction) { event.preventDefault(); setHeldDirection(direction, true); } }); window.addEventListener("keyup", (event) => { const direction = keyDirections[event.key] || keyDirections[event.key.toLowerCase()]; if (direction) setHeldDirection(direction, false); }); window.addEventListener("blur", () => heldDirections.clear());
+
+function pointerDistance() {
+  const [first, second] = [...touchPointers.values()];
+  return Math.hypot(first.x - second.x, first.y - second.y);
+}
+function setRemainingPointerStart() {
+  for (const pointer of touchPointers.values()) {
+    pointer.lastX = pointer.x;
+    pointer.lastY = pointer.y;
+  }
+}
+function endCameraTouch(event) {
+  if (!touchPointers.has(event.pointerId)) return;
+  touchPointers.delete(event.pointerId);
+  if (touchPointers.size === 2) pinchDistance = pointerDistance();
+  else {
+    pinchDistance = 0;
+    setRemainingPointerStart();
+  }
+}
+
+// Keep camera gestures on the canvas so they never compete with the movement pad.
+canvas.addEventListener("pointerdown", (event) => {
+  if (event.pointerType !== "touch") return;
+  event.preventDefault();
+  canvas.setPointerCapture(event.pointerId);
+  touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY, lastX: event.clientX, lastY: event.clientY });
+  if (touchPointers.size === 2) pinchDistance = pointerDistance();
+  else if (touchPointers.size > 2) pinchDistance = 0;
+});
+canvas.addEventListener("pointermove", (event) => {
+  const pointer = touchPointers.get(event.pointerId);
+  if (!pointer) return;
+  event.preventDefault();
+  pointer.x = event.clientX;
+  pointer.y = event.clientY;
+  cameraGestureUntil = performance.now() + 2200;
+  if (touchPointers.size === 1) {
+    // A one-finger swipe orbits around the player while the follow target keeps moving.
+    cameraOrbit.azimuth -= (pointer.x - pointer.lastX) * .009;
+    cameraOrbit.elevation = THREE.MathUtils.clamp(cameraOrbit.elevation + (pointer.y - pointer.lastY) * .007, .2, 1.18);
+  } else if (touchPointers.size === 2) {
+    const distance = pointerDistance();
+    if (pinchDistance) cameraOrbit.radius = THREE.MathUtils.clamp(cameraOrbit.radius * pinchDistance / distance, 8, 48);
+    pinchDistance = distance;
+  }
+  setRemainingPointerStart();
+}, { passive: false });
+["pointerup", "pointercancel", "lostpointercapture"].forEach((name) => canvas.addEventListener(name, endCameraTouch));
+
 function resize() { const { width, height } = canvas.getBoundingClientRect(); renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix(); }
-function animate() { requestAnimationFrame(animate); const delta = Math.min(clock.getDelta(), .1); for (const direction of heldDirections) move(direction); if (me) { const target = new THREE.Vector3(me.x, terrainHeight(Math.floor(me.x), Math.floor(me.y)) + 1, me.y); cameraTarget.lerp(target, 1 - Math.exp(-delta * 5)); const now = Date.now(); if (now - lastEat > 250) { const nearby = [...cookies.values()].find((cookie) => Math.hypot(cookie.x - me.x, cookie.y - me.y) < 1.35); if (nearby) { lastEat = now; send({ type: "eat", cookieId: nearby.id }); } } } camera.position.lerp(new THREE.Vector3(cameraTarget.x + 14, cameraTarget.y + 15, cameraTarget.z + 18), 1 - Math.exp(-delta * 4)); camera.lookAt(cameraTarget); for (const dog of dogMeshes.values()) dog.userData.label?.quaternion.copy(camera.quaternion); for (const cookie of cookieMeshes.values()) cookie.rotation.y += delta * 1.8; renderer.render(scene, camera); }
+function animate() { requestAnimationFrame(animate); const delta = Math.min(clock.getDelta(), .1); for (const direction of heldDirections) move(direction); if (me) { const target = new THREE.Vector3(me.x, terrainHeight(Math.floor(me.x), Math.floor(me.y)) + 1, me.y); cameraTarget.lerp(target, 1 - Math.exp(-delta * 5)); const now = Date.now(); if (now - lastEat > 250) { const nearby = [...cookies.values()].find((cookie) => Math.hypot(cookie.x - me.x, cookie.y - me.y) < 1.35); if (nearby) { lastEat = now; send({ type: "eat", cookieId: nearby.id }); } } }
+  // Gesture changes are intentionally temporary; once released, the camera eases back to its following view.
+  if (!touchPointers.size && performance.now() > cameraGestureUntil) {
+    const returnSpeed = 1 - Math.exp(-delta * 1.5);
+    cameraOrbit.azimuth = THREE.MathUtils.lerp(cameraOrbit.azimuth, CAMERA_DEFAULTS.azimuth, returnSpeed);
+    cameraOrbit.elevation = THREE.MathUtils.lerp(cameraOrbit.elevation, CAMERA_DEFAULTS.elevation, returnSpeed);
+    cameraOrbit.radius = THREE.MathUtils.lerp(cameraOrbit.radius, CAMERA_DEFAULTS.radius, returnSpeed);
+  }
+  const horizontalDistance = Math.cos(cameraOrbit.elevation) * cameraOrbit.radius;
+  const cameraPosition = new THREE.Vector3(
+    cameraTarget.x + Math.sin(cameraOrbit.azimuth) * horizontalDistance,
+    cameraTarget.y + Math.sin(cameraOrbit.elevation) * cameraOrbit.radius,
+    cameraTarget.z + Math.cos(cameraOrbit.azimuth) * horizontalDistance,
+  );
+  camera.position.lerp(cameraPosition, 1 - Math.exp(-delta * 8)); camera.lookAt(cameraTarget); for (const dog of dogMeshes.values()) dog.userData.label?.quaternion.copy(camera.quaternion); for (const cookie of cookieMeshes.values()) cookie.rotation.y += delta * 1.8; renderer.render(scene, camera); }
 new ResizeObserver(resize).observe(canvas); connect(); resize(); animate();
