@@ -4,6 +4,10 @@ const TOY_COUNT = Math.ceil(COOKIE_COUNT / 8);
 const NPCS_PER_BREED = 2;
 const BONE_XP = 1;
 const TOY_XP = 2;
+const GOLDEN_TOY_XP = TOY_XP * 2;
+const GOLDEN_TOY_COUNT = 4;
+const CHAT_MAX_LENGTH = 180;
+const CHAT_COOLDOWN_MS = 650;
 const BREEDS = ["Chihuahua", "Shih Tzu", "Golden Retriever", "Border Collie", "Rottweiler", "Saint Bernard"];
 const NPC_BREEDS = ["Chow Chow", "Beagle", "Husky"];
 const REQUIREMENTS = [5, 10, 20, 40, 80];
@@ -52,9 +56,14 @@ export class World {
         CREATE TABLE IF NOT EXISTS toys (
           id TEXT PRIMARY KEY,
           x REAL NOT NULL,
-          y REAL NOT NULL
+          y REAL NOT NULL,
+          golden INTEGER NOT NULL DEFAULT 0
         )
       `);
+      const toyColumns = ctx.storage.sql.exec("PRAGMA table_info(toys)").toArray();
+      if (!toyColumns.some((column) => column.name === "golden")) {
+        ctx.storage.sql.exec("ALTER TABLE toys ADD COLUMN golden INTEGER NOT NULL DEFAULT 0");
+      }
       ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS npcs (
           id TEXT PRIMARY KEY,
@@ -74,7 +83,12 @@ export class World {
       const toys = ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM toys").one().count;
       for (let index = toys; index < TOY_COUNT; index += 1) {
         const point = randomPoint();
-        ctx.storage.sql.exec("INSERT INTO toys (id, x, y) VALUES (?, ?, ?)", crypto.randomUUID(), point.x, point.y);
+        ctx.storage.sql.exec("INSERT INTO toys (id, x, y, golden) VALUES (?, ?, ?, 0)", crypto.randomUUID(), point.x, point.y);
+      }
+      const goldenToys = ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM toys WHERE golden = 1").one().count;
+      for (let index = goldenToys; index < GOLDEN_TOY_COUNT; index += 1) {
+        const point = randomPoint();
+        ctx.storage.sql.exec("INSERT INTO toys (id, x, y, golden) VALUES (?, ?, ?, 1)", crypto.randomUUID(), point.x, point.y);
       }
       const npcCount = ctx.storage.sql.exec("SELECT COUNT(*) AS count FROM npcs").one().count;
       for (let index = npcCount; index < NPC_BREEDS.length * NPCS_PER_BREED; index += 1) {
@@ -108,10 +122,10 @@ export class World {
     server.serializeAttachment(dog);
     this.ctx.acceptWebSocket(server);
     const cookies = this.ctx.storage.sql.exec("SELECT id, x, y FROM cookies").toArray();
-    const toys = this.ctx.storage.sql.exec("SELECT id, x, y FROM toys").toArray();
+    const toys = this.ctx.storage.sql.exec("SELECT id, x, y, golden FROM toys").toArray();
     const npcs = this.npcs();
     await this.ctx.storage.setAlarm(Date.now() + 1200);
-    this.send(server, { type: "welcome", dog, people: this.people(), cookies, toys, npcs, boneXp: BONE_XP, toyXp: TOY_XP, breeds: BREEDS, requirements: REQUIREMENTS, leaderboard: this.leaderboard() });
+    this.send(server, { type: "welcome", dog, people: this.people(), cookies, toys, npcs, boneXp: BONE_XP, toyXp: TOY_XP, goldenToyXp: GOLDEN_TOY_XP, breeds: BREEDS, requirements: REQUIREMENTS, leaderboard: this.leaderboard() });
     this.broadcast({ type: "dog_join", dog }, server);
     this.broadcast({ type: "leaderboard", leaderboard: this.leaderboard() });
     return new Response(null, { status: 101, webSocket: client });
@@ -138,14 +152,30 @@ export class World {
       return;
     }
 
+    if (message.type === "jump") {
+      const updated = { ...dog, jumpUntil: Date.now() + 520 };
+      socket.serializeAttachment(updated);
+      this.broadcast({ type: "dog_update", dog: updated, jumped: true });
+      return;
+    }
+
+    if (message.type === "chat" && typeof message.text === "string") {
+      const text = message.text.trim().replace(/\s+/g, " ").slice(0, CHAT_MAX_LENGTH);
+      const now = Date.now();
+      if (!text || now - (dog.lastChatAt || 0) < CHAT_COOLDOWN_MS) return;
+      socket.serializeAttachment({ ...dog, lastChatAt: now });
+      this.broadcast({ type: "chat", id: crypto.randomUUID(), from: dog.id, label: dog.label, text, at: now });
+      return;
+    }
+
     if (message.type === "eat" && typeof message.itemId === "string" && (message.itemType === "cookie" || message.itemType === "toy")) {
       const table = message.itemType === "toy" ? "toys" : "cookies";
-      const item = this.ctx.storage.sql.exec(`SELECT id, x, y FROM ${table} WHERE id = ?`, message.itemId).one();
+      const item = this.ctx.storage.sql.exec(`SELECT id, x, y${message.itemType === "toy" ? ", golden" : ""} FROM ${table} WHERE id = ?`, message.itemId).one();
       if (!item || Math.hypot(item.x - dog.x, item.y - dog.y) > 1.75) return;
 
       const point = randomPoint();
       this.ctx.storage.sql.exec(`UPDATE ${table} SET x = ?, y = ? WHERE id = ?`, point.x, point.y, item.id);
-      const earnedXp = message.itemType === "toy" ? TOY_XP : BONE_XP;
+      const earnedXp = message.itemType === "toy" ? (item.golden ? GOLDEN_TOY_XP : TOY_XP) : BONE_XP;
       let xp = dog.xp + earnedXp;
       let breed = dog.breed;
       let evolved = false;
@@ -156,8 +186,8 @@ export class World {
       }
       const updated = { ...dog, xp, breed };
       socket.serializeAttachment(updated);
-      this.broadcast({ type: "item_respawn", itemType: message.itemType, item: { id: item.id, ...point } });
-      this.broadcast({ type: "dog_update", dog: updated, ate: true, itemType: message.itemType, earnedXp, evolved });
+      this.broadcast({ type: "item_respawn", itemType: message.itemType, item: { id: item.id, ...point, golden: Boolean(item.golden) } });
+      this.broadcast({ type: "dog_update", dog: updated, ate: true, itemType: message.itemType, earnedXp, evolved, golden: Boolean(item.golden) });
       this.broadcast({ type: "leaderboard", leaderboard: this.leaderboard() });
     }
   }

@@ -15,7 +15,7 @@
       </header>
       <section class="world-wrap" aria-label="Doggy Evolution World">
         <canvas id="world" aria-label="3D dog world"></canvas>
-        <div class="world-hint">Bone cookies give 1 XP • rare toys give 2 XP! Move with WASD, arrow keys, or the pad.</div>
+        <div class="world-hint">Bone cookies: 1 XP • toys: 2 XP • golden toys: 4 XP. Move with WASD / arrows; jump with Space.</div>
         <div id="toast" class="toast" aria-live="polite"></div>
         <div class="touch-controls" aria-label="Touch game controls">
           <div class="d-pad" aria-label="Move your dog">
@@ -25,12 +25,14 @@
             <button type="button" class="move-button move-down" data-direction="down" aria-label="Move down">▼</button>
           </div>
         </div>
+        <button type="button" id="jump-button" class="jump-button" aria-label="Jump">Jump<span>Space</span></button>
       </section>
       <aside class="control-panel">
         <section class="self"><p class="eyebrow">Your pup</p><strong id="me">Finding your collar…</strong><p id="breed">Breed: —</p><div class="xp-bar" aria-label="Evolution progress"><i id="xp-fill"></i></div><p id="progress">0 / 5 bone cookies</p></section>
         <section><p class="eyebrow">Evolution trail</p><ol id="breed-list" class="breed-list"></ol></section>
         <section><p class="eyebrow">Park leaderboard</p><div id="leaderboard" class="leaderboard"><p class="empty">Finding the fastest tails…</p></div></section>
         <section><p class="eyebrow">Dogs in the park</p><div id="people" class="people"><p class="empty">Waiting for other pups.</p></div></section>
+        <section class="chat-panel"><p class="eyebrow">Park chat</p><div id="chat-messages" class="chat-messages" aria-live="polite"><p class="empty">Say hi to the pack!</p></div><form id="chat-form" class="chat-form"><input id="chat-input" maxlength="180" autocomplete="off" placeholder="Bark a message…" aria-label="Chat message" /><button type="submit">Send</button></form></section>
       </aside>
     </main>
     <script type="module" src="app.js?v=20260710"></script>
